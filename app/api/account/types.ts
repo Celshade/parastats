@@ -26,6 +26,29 @@ export interface AccountUpdate {
   signature: string,
 }
 
+// Address link (alias) types
+export interface AddressLinkCreate {
+  primary_address: string;
+  linked_address: string;
+  timestamp: number;
+  primary_signature: string;
+  linked_signature: string;
+}
+
+export interface AddressLinkDelete {
+  primary_address: string;
+  linked_address: string;
+  timestamp: number;
+  signature: string;
+}
+
+export interface AddressLinksResponse {
+  primary_address: string;
+  linked_addresses: string[];
+  // Set when the queried address is itself an alias of another primary.
+  linked_to: string | null;
+}
+
 // Lightning wallet types
 export interface WalletInfo {
   email: string;
