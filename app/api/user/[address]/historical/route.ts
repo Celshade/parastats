@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { parseHashrate } from '../../../../utils/formatters';
 import { getDb } from '../../../../../lib/db';
+import {
+  resolveAddressSet,
+  placeholders,
+} from '../../../../../lib/address-links';
 
 // Enable caching based on interval
 export const revalidate = 60;
@@ -127,10 +131,15 @@ export async function GET(
 
     const db = getDb();
 
-    // First get the user_id from monitored_users
-    const user = db.prepare('SELECT id FROM monitored_users WHERE address = ? AND is_active = 1').get(address) as { id: number } | undefined;
+    // Resolve monitored_users ids for the address and any linked
+    // (alias) addresses so their series are summed together
+    const addressSet = resolveAddressSet(address);
+    const users = db.prepare(
+      `SELECT id FROM monitored_users
+       WHERE address IN (${placeholders(addressSet)}) AND is_active = 1`
+    ).all(...addressSet) as { id: number }[];
 
-    if (!user) {
+    if (users.length === 0) {
       return NextResponse.json(
         { error: "User not found or not active" },
         { status: 404 }
@@ -182,19 +191,21 @@ export async function GET(
     `);
 
     for (const { start, end } of intervals) {
-      const rows = stmt.all(user.id, start, end) as { timestamp: number; hashrate: string }[];
-
-      if (rows.length > 0) {
-        const row = rows[0];
-        const hashrate = parseHashrate(row.hashrate);
-        
-        // Only include intervals that have real data
-        if (hashrate > 0) {
-          results.push({
-            timestamp: new Date(start * 1000).toISOString(),
-            hashrate: hashrate
-          });
+      // Sum the latest sample of every address in the set for this bucket
+      let hashrate = 0;
+      for (const user of users) {
+        const rows = stmt.all(user.id, start, end) as { timestamp: number; hashrate: string }[];
+        if (rows.length > 0) {
+          hashrate += parseHashrate(rows[0].hashrate);
         }
+      }
+
+      // Only include intervals that have real data
+      if (hashrate > 0) {
+        results.push({
+          timestamp: new Date(start * 1000).toISOString(),
+          hashrate: hashrate
+        });
       }
     }
 
