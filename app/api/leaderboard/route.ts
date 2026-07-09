@@ -42,6 +42,22 @@ function formatRoundParticipants(
   }));
 }
 
+// Round participant rows folded onto their primary address: an alias's
+// stats merge into its primary's entry so linked addresses don't compete
+// as separate users. Privacy follows the canonical (primary) address.
+const MERGED_ROUND_PARTICIPANTS = `
+  SELECT
+    COALESCE(al.primary_address, rp.username) AS username,
+    MAX(rp.top_diff) AS top_diff,
+    SUM(rp.blocks_participated) AS blocks_participated
+  FROM round_participants rp
+  LEFT JOIN address_links al ON rp.username = al.linked_address
+  LEFT JOIN monitored_users m
+    ON COALESCE(al.primary_address, rp.username) = m.address
+  WHERE rp.block_height = ? AND (m.is_public = 1 OR m.address IS NULL)
+  GROUP BY COALESCE(al.primary_address, rp.username)
+`;
+
 function handleRoundQuery(
   db: ReturnType<typeof getDb>,
   type: string,
@@ -50,14 +66,12 @@ function handleRoundQuery(
   claimedSet: Set<string>
 ) {
   if (type === 'difficulty' || type === 'loyalty') {
-    const isDiff = type === 'difficulty';
+    const metric = type === 'difficulty' ? 'top_diff' : 'blocks_participated';
     const rows = db.prepare(`
-      SELECT rp.username, rp.top_diff, rp.blocks_participated
-      FROM round_participants rp
-      LEFT JOIN monitored_users m ON rp.username = m.address
-      WHERE rp.block_height = ? AND (m.is_public = 1 OR m.address IS NULL)
-        AND ${isDiff ? 'rp.top_diff' : 'rp.blocks_participated'} > 0
-      ORDER BY ${isDiff ? 'rp.top_diff' : 'rp.blocks_participated'} DESC
+      SELECT username, top_diff, blocks_participated
+      FROM (${MERGED_ROUND_PARTICIPANTS})
+      WHERE ${metric} > 0
+      ORDER BY ${metric} DESC
       LIMIT ?
     `).all(blockHeight, limit) as RoundParticipantRow[];
     return formatRoundParticipants(rows, claimedSet);
@@ -67,15 +81,13 @@ function handleRoundQuery(
   const rows = db.prepare(`
     WITH RankedParticipants AS (
       SELECT
-        rp.username,
-        rp.top_diff,
-        rp.blocks_participated,
-        RANK() OVER (ORDER BY rp.top_diff DESC) as diff_rank,
-        RANK() OVER (ORDER BY rp.blocks_participated DESC) as loyalty_rank
-      FROM round_participants rp
-      LEFT JOIN monitored_users m ON rp.username = m.address
-      WHERE rp.block_height = ? AND (m.is_public = 1 OR m.address IS NULL)
-        AND (rp.top_diff > 0 OR rp.blocks_participated > 0)
+        username,
+        top_diff,
+        blocks_participated,
+        RANK() OVER (ORDER BY top_diff DESC) as diff_rank,
+        RANK() OVER (ORDER BY blocks_participated DESC) as loyalty_rank
+      FROM (${MERGED_ROUND_PARTICIPANTS})
+      WHERE top_diff > 0 OR blocks_participated > 0
     )
     SELECT
       username,
@@ -125,7 +137,23 @@ export async function GET(request: Request) {
       return NextResponse.json(users);
     }
 
-    // All-time leaderboard (existing behavior)
+    // All-time leaderboard. Alias rows fold onto their primary address
+    // (MAX of best diffs, SUM of block counts); privacy follows the
+    // primary's is_public when the row is an alias.
+    const mergedUsers = `
+      SELECT
+        MIN(mu.id) AS id,
+        COALESCE(al.primary_address, mu.address) AS address,
+        MAX(mu.bestever) AS bestever,
+        SUM(mu.total_blocks) AS total_blocks
+      FROM monitored_users mu
+      LEFT JOIN address_links al ON mu.address = al.linked_address
+      LEFT JOIN monitored_users pm ON al.primary_address = pm.address
+      WHERE mu.is_active = 1
+        AND COALESCE(pm.is_public, mu.is_public) = 1
+      GROUP BY COALESCE(al.primary_address, mu.address)
+    `;
+
     let users;
 
     switch (type) {
@@ -135,8 +163,8 @@ export async function GET(request: Request) {
             id,
             address,
             bestever as diff
-          FROM monitored_users
-          WHERE is_active = 1 AND is_public = 1 AND bestever > 0
+          FROM (${mergedUsers})
+          WHERE bestever > 0
           ORDER BY bestever DESC
           LIMIT ?
         `).all(limit).map((user: unknown) => ({
@@ -152,8 +180,8 @@ export async function GET(request: Request) {
             id,
             address,
             total_blocks
-          FROM monitored_users
-          WHERE is_active = 1 AND is_public = 1 AND total_blocks > 0
+          FROM (${mergedUsers})
+          WHERE total_blocks > 0
           ORDER BY total_blocks DESC
           LIMIT ?
         `).all(limit).map((user: unknown) => ({
@@ -174,8 +202,8 @@ export async function GET(request: Request) {
               total_blocks,
               RANK() OVER (ORDER BY bestever DESC) as diff_rank,
               RANK() OVER (ORDER BY total_blocks DESC) as loyalty_rank
-            FROM monitored_users
-            WHERE is_active = 1 AND is_public = 1 AND max(total_blocks, bestever) > 0
+            FROM (${mergedUsers})
+            WHERE max(total_blocks, bestever) > 0
           )
           SELECT
             id,
