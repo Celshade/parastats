@@ -4,6 +4,7 @@ import { formatAddress } from '@/app/utils/formatters';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
 import { checkRateLimit, getRateLimitHeaders } from '@/app/api/lib/rate-limit';
 import { getClaimedAddresses } from '@/lib/dispenser-cache';
+import { resolveAddressSet, placeholders } from '@/lib/address-links';
 import {
   MAX_LIMIT,
   BlockHighestDiffRow,
@@ -95,20 +96,25 @@ export async function GET(request: Request) {
         return NextResponse.json([], { headers: getRateLimitHeaders(rateLimitResult) });
       }
 
-      // Get this user's best diffs across all blocks (not just watermarks)
+      // Get this user's best diffs across all blocks (not just watermarks),
+      // including any linked (alias) addresses. GROUP BY block keeps one
+      // row per block when multiple linked addresses submitted; SQLite's
+      // bare-column rule pairs u.address with the MAX(difficulty) row.
       // Join with block_highest_diff to get the block timestamp
+      const addressSet = resolveAddressSet(address);
       const userDiffs = db.prepare(`
-        SELECT 
+        SELECT
           u.block_height,
           u.address,
-          u.difficulty,
+          MAX(u.difficulty) AS difficulty,
           b.block_timestamp
         FROM user_block_diff u
         LEFT JOIN block_highest_diff b ON u.block_height = b.block_height
-        WHERE u.address = ?
+        WHERE u.address IN (${placeholders(addressSet)})
+        GROUP BY u.block_height
         ORDER BY u.block_height DESC
         LIMIT ?
-      `).all(address, limit) as UserDiffWithTimestampRow[];
+      `).all(...addressSet, limit) as UserDiffWithTimestampRow[];
 
       return NextResponse.json(
         userDiffs.map(d => ({
@@ -133,19 +139,21 @@ export async function GET(request: Request) {
         return NextResponse.json([], { headers: getRateLimitHeaders(rateLimitResult) });
       }
 
-      // Get blocks where this user had the top diff (watermarks only)
+      // Get blocks where this user (or a linked address) had the top diff
+      // (watermarks only)
       // Note: DB column is winner_address, aliased for API consistency
+      const addressSet = resolveAddressSet(address);
       const userBlocks = db.prepare(`
-        SELECT 
+        SELECT
           block_height,
           winner_address as top_diff_address,
           difficulty,
           block_timestamp
         FROM block_highest_diff
-        WHERE winner_address = ?
+        WHERE winner_address IN (${placeholders(addressSet)})
         ORDER BY block_height DESC
         LIMIT ?
-      `).all(address, limit) as BlockHighestDiffRow[];
+      `).all(...addressSet, limit) as BlockHighestDiffRow[];
 
       return NextResponse.json(
         userBlocks.map(b => ({
