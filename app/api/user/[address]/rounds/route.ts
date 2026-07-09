@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { resolveAddressSet, placeholders } from '@/lib/address-links';
+
+// Sentinel ident used to collapse a user's linked-address rows into one
+// virtual participant when ranking. Never collides with real usernames,
+// which are Bitcoin addresses.
+const SELF_IDENT = 'self';
 
 export interface UserRoundHistoryEntry {
   block_height: number;
@@ -51,14 +57,29 @@ export async function GET(
       return NextResponse.json({ error: 'This user profile is private' }, { status: 403 });
     }
 
-    // Current round (block_height = 0 sentinel)
+    // Linked (alias) addresses count toward this user's stats
+    const addressSet = resolveAddressSet(address);
+    const setPh = placeholders(addressSet);
+
+    // Current round (block_height = 0 sentinel), merged across the set
     const currentUser = db.prepare(
-      `SELECT top_diff, blocks_participated, total_work FROM round_participants WHERE block_height = 0 AND username = ?`
-    ).get(address) as { top_diff: number; blocks_participated: number; total_work: number } | undefined;
+      `SELECT
+         MAX(top_diff) AS top_diff,
+         SUM(blocks_participated) AS blocks_participated,
+         SUM(total_work) AS total_work,
+         COUNT(*) AS row_count
+       FROM round_participants
+       WHERE block_height = 0 AND username IN (${setPh})`
+    ).get(...addressSet) as {
+      top_diff: number | null;
+      blocks_participated: number | null;
+      total_work: number | null;
+      row_count: number;
+    };
 
     let current_round: UserRoundsResponse['current_round'] = null;
 
-    if (currentUser) {
+    if (currentUser.row_count > 0 && currentUser.top_diff !== null) {
       const rankInfo = db.prepare(`
         SELECT
           COUNT(CASE WHEN top_diff > ? THEN 1 END) + 1 AS rank,
@@ -72,42 +93,61 @@ export async function GET(
         rank: rankInfo.rank,
         blocks_rank: rankInfo.blocks_rank,
         work_rank: rankInfo.work_rank,
-        total_participants: rankInfo.total,
+        // Our alias rows would otherwise count as extra participants
+        total_participants: rankInfo.total - (currentUser.row_count - 1),
         top_diff: currentUser.top_diff,
-        blocks_participated: currentUser.blocks_participated,
-        total_work: currentUser.total_work,
+        blocks_participated: currentUser.blocks_participated ?? 0,
+        total_work: currentUser.total_work ?? 0,
       };
     }
 
-    // Rounds won
+    // Rounds won (any address in the set)
     const wonRow = db.prepare(
-      `SELECT COUNT(*) AS count FROM rounds WHERE winner_username = ?`
-    ).get(address) as { count: number };
+      `SELECT COUNT(*) AS count FROM rounds
+       WHERE winner_username IN (${setPh})`
+    ).get(...addressSet) as { count: number };
 
-    // Total rounds participated (based on block participants)
+    // Total rounds participated (based on block participants); DISTINCT
+    // so a round mined under two linked addresses counts once
     const participatedRow = db.prepare(
-      `SELECT COUNT(*) AS count FROM block_participants WHERE username = ?`
-    ).get(address) as { count: number };
+      `SELECT COUNT(DISTINCT block_height) AS count FROM block_participants
+       WHERE username IN (${setPh})`
+    ).get(...addressSet) as { count: number };
 
-    // History with rank, total participants, and winner status per round
+    // History with rank, total participants, and winner status per round.
+    // Rows belonging to the user's address set are merged into a single
+    // virtual participant (SELF_IDENT) before ranking so linked addresses
+    // are neither double-counted nor ranked against each other.
     const history = db.prepare(`
       WITH user_blocks AS (
-        SELECT block_height FROM block_participants WHERE username = ?
+        SELECT DISTINCT block_height FROM block_participants
+        WHERE username IN (${setPh})
       ),
-      ranked AS (
+      merged AS (
         SELECT
           rp.block_height,
-          rp.username,
-          rp.top_diff,
-          rp.blocks_participated,
-          rp.total_work,
-          RANK() OVER (PARTITION BY rp.block_height ORDER BY rp.top_diff DESC) AS rank,
-          RANK() OVER (PARTITION BY rp.block_height ORDER BY rp.blocks_participated DESC) AS blocks_rank,
-          RANK() OVER (PARTITION BY rp.block_height ORDER BY rp.total_work DESC) AS work_rank,
-          COUNT(*) OVER (PARTITION BY rp.block_height) AS total_participants
+          CASE WHEN rp.username IN (${setPh})
+               THEN '${SELF_IDENT}' ELSE rp.username END AS ident,
+          MAX(rp.top_diff) AS top_diff,
+          SUM(rp.blocks_participated) AS blocks_participated,
+          SUM(rp.total_work) AS total_work
         FROM round_participants rp
         INNER JOIN user_blocks ub ON ub.block_height = rp.block_height
         WHERE rp.block_height > 0
+        GROUP BY rp.block_height, ident
+      ),
+      ranked AS (
+        SELECT
+          block_height,
+          ident,
+          top_diff,
+          blocks_participated,
+          total_work,
+          RANK() OVER (PARTITION BY block_height ORDER BY top_diff DESC) AS rank,
+          RANK() OVER (PARTITION BY block_height ORDER BY blocks_participated DESC) AS blocks_rank,
+          RANK() OVER (PARTITION BY block_height ORDER BY total_work DESC) AS work_rank,
+          COUNT(*) OVER (PARTITION BY block_height) AS total_participants
+        FROM merged
       )
       SELECT
         ranked.block_height,
@@ -118,13 +158,13 @@ export async function GET(
         ranked.blocks_rank,
         ranked.work_rank,
         ranked.total_participants,
-        CASE WHEN r.winner_username = ? THEN 1 ELSE 0 END AS is_winner
+        CASE WHEN r.winner_username IN (${setPh}) THEN 1 ELSE 0 END AS is_winner
       FROM ranked
       LEFT JOIN rounds r ON r.block_height = ranked.block_height
-      WHERE ranked.username = ?
+      WHERE ranked.ident = '${SELF_IDENT}'
       ORDER BY ranked.block_height DESC
       LIMIT ?
-    `).all(address, address, address, limit) as {
+    `).all(...addressSet, ...addressSet, ...addressSet, limit) as {
       block_height: number;
       top_diff: number;
       blocks_participated: number;
