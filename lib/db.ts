@@ -225,6 +225,23 @@ function initializeTables() {
       ON round_participants(username, block_height DESC);
   `);
 
+  // Create address links table (aliases: a linked address's stats/claims
+  // resolve to its primary). No FK to monitored_users - a primary may not be
+  // monitored yet; the API route validates addresses instead.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS address_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      primary_address TEXT NOT NULL,
+      linked_address TEXT UNIQUE NOT NULL,
+      linked_at INTEGER NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_address_links_primary
+      ON address_links(primary_address)
+  `);
+
   // Create block participants table (users who submitted shares at the exact block height)
   db.exec(`
     CREATE TABLE IF NOT EXISTS block_participants (
