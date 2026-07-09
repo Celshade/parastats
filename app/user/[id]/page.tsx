@@ -24,6 +24,7 @@ import BadgeDisplay from '@/app/components/badges/BadgeDisplay';
 import Refinery from '@/app/components/Refinery';
 import ErrorBoundary from '@/app/components/ErrorBoundary';
 import UserMiners from '@/app/components/UserMiners';
+import LinkedAddresses from '@/app/components/LinkedAddresses';
 import CardHeader from '@/app/components/CardHeader';
 import { getCollapsibleContainerClassName, shouldToggleCollapse } from '@/app/components/collapsible';
 
@@ -700,6 +701,13 @@ export default function UserDashboard() {
                   </button>
               )}
             </div>
+
+            {/* Linked addresses: alias banner (all viewers) or owner panel */}
+            <LinkedAddresses
+              userId={userId}
+              isOwner={isOwnProfile}
+              className="mb-4"
+            />
 
             {/* Stats Cards */}
             <div className="w-full">
