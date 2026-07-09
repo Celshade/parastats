@@ -86,6 +86,8 @@ export default function UserDashboard() {
   const [hasRefineryOperatorBadge, setHasRefineryOperatorBadge] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>(defaultCollapsedSections);
   const [loadedCollapsePreferencesUserId, setLoadedCollapsePreferencesUserId] = useState<string | null>(null);
+  // Primary address this page's address is linked to (if it's an alias)
+  const [linkedPrimary, setLinkedPrimary] = useState<string | null>(null);
 
   const {
     address,
@@ -99,6 +101,20 @@ export default function UserDashboard() {
   useEffect(() => {
     const isValid = isValidBitcoinAddress(userId.trim());
     setIsValidAddress(isValid);
+  }, [userId]);
+
+  // Check whether this address is an alias linked to another primary
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/account/links?address=${encodeURIComponent(userId)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setLinkedPrimary(data?.linked_to ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -418,6 +434,12 @@ export default function UserDashboard() {
 
   const isPrivate = accountData?.metadata?.is_private ?? false;
   const isOwnProfile = isConnected && address === userId;
+  // Connected wallet is the primary this page's address is linked to:
+  // grant claim access on the alias's page (signatures still verified
+  // against the alias server-side)
+  const isLinkedOwner =
+    isConnected && !isOwnProfile && address !== null &&
+    linkedPrimary === address;
   const refineryLoading = !isInitialized || !hasInitiallyLoaded || isLoadingAccountData;
   const refineryActivated = Boolean(isLightningAuthenticated && accountData && accountData.ln_address);
   const showRefinery = isOwnProfile && (refineryLoading || refineryActivated);
@@ -750,6 +772,14 @@ export default function UserDashboard() {
                       onToggle={() => toggleCollapsedSection('stratumLightning')}
                     />
                   </div>
+              ) : isLinkedOwner ? (
+                  // Connected wallet owns the primary this alias is linked
+                  // to - allow dispenser claims (signed by the alias wallet)
+                  <DispenserClaim
+                    userId={userId}
+                    collapsed={collapsedSections.dispenser}
+                    onToggle={() => toggleCollapsedSection('dispenser')}
+                  />
               ) : isConnected && !isOwnProfile ? null
               : !isLightningAuthenticated || !accountData || !accountData.ln_address ? (
                       // Not authenticated, no account data, or no lightning address - Show Connect/Activate Account button
