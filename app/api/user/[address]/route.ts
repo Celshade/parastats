@@ -3,6 +3,7 @@ import { formatDifficulty, parseHashrate } from '@/app/utils/formatters';
 import { formatRelativeTime } from '@/app/utils/formatters';
 import { fetch } from '@/lib/http-client';
 import { fetchWithCache } from '@/lib/aggregator-cache';
+import { resolveAddressSet } from '@/lib/address-links';
 
 export interface WorkerData {
   workername: string;
@@ -67,27 +68,56 @@ export async function GET(
       headers['Authorization'] = `Bearer ${process.env.API_TOKEN}`;
     }
 
-    const { data: userData } = await fetchWithCache<UserData>(
-      `${apiUrl}/aggregator/users/${address}`,
-      async () => {
-        const response = await fetch(`${apiUrl}/aggregator/users/${address}`, {
-          headers,
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch user data: ${response.statusText} (${response.status})`);
-        }
-        return await response.json() as UserData;
-      },
-    );
+    const fetchUserData = (userAddress: string) =>
+      fetchWithCache<UserData>(
+        `${apiUrl}/aggregator/users/${userAddress}`,
+        async () => {
+          const response = await fetch(
+            `${apiUrl}/aggregator/users/${userAddress}`,
+            { headers }
+          );
+          if (!response.ok) {
+            throw new Error(`Failed to fetch user data: ${response.statusText} (${response.status})`);
+          }
+          return await response.json() as UserData;
+        },
+      );
 
-    // Process the user data
+    const { data: userData } = await fetchUserData(address);
+
+    // Rigs may still point at linked (alias) addresses; fold their live
+    // stats into the primary's. Alias fetch failures are non-fatal (an
+    // alias may have no aggregator record yet).
+    const linkedAddresses = resolveAddressSet(address).slice(1);
+    const linkedData: UserData[] = [];
+    for (const linked of linkedAddresses) {
+      try {
+        const { data } = await fetchUserData(linked);
+        linkedData.push(data);
+      } catch (error) {
+        console.warn(`Skipping linked address ${linked}:`, error);
+      }
+    }
+
+    const allData = [userData, ...linkedData];
+
+    // Process the user data, summed/merged across the address set
     const processedData: ProcessedUserData = {
-      hashrate: parseHashrate(userData.hashrate5m),
-      workers: userData.workers,
-      lastSubmission: formatRelativeTime(userData.lastshare),
-      bestDifficulty: formatDifficulty(userData.bestever),
-      uptime: calculateUptime(userData.authorised),
-      workerData: processWorkerData(userData.worker),
+      hashrate: allData.reduce(
+        (sum, d) => sum + parseHashrate(d.hashrate5m), 0
+      ),
+      workers: allData.reduce((sum, d) => sum + d.workers, 0),
+      lastSubmission: formatRelativeTime(
+        Math.max(...allData.map(d => d.lastshare))
+      ),
+      bestDifficulty: formatDifficulty(
+        Math.max(...allData.map(d => d.bestever))
+      ),
+      // Earliest authorisation across the set = longest uptime
+      uptime: calculateUptime(
+        Math.min(...allData.map(d => d.authorised))
+      ),
+      workerData: processWorkerData(allData.flatMap(d => d.worker)),
     };
 
     return NextResponse.json(processedData);
