@@ -13,15 +13,28 @@ import { getDb } from '@/lib/db';
 import { getLinkedAddresses, getPrimaryFor } from '@/lib/address-links';
 import { verifyBip322Signature } from '@/lib/bip322';
 
+
 // Signed challenge messages older (or further in the future) than this
 // are rejected to bound replayability.
 const TIMESTAMP_WINDOW_SECONDS = 10 * 60;
 
+
+/**
+ * Check if a given timestamp is stale based on the defined window.
+ * @param {number} timestamp - The timestamp to check.
+ * @returns {boolean} True if the timestamp is stale, false otherwise.
+ */
 function isTimestampStale(timestamp: number): boolean {
   const now = Math.floor(Date.now() / 1000);
   return Math.abs(now - timestamp) > TIMESTAMP_WINDOW_SECONDS;
 }
 
+
+/**
+ * Get the linked addresses response for a given address.
+ * @param {string} address - The address to fetch linked addresses for.
+ * @returns {AddressLinksResponse} The linked addresses response.
+ */
 function linksResponse(address: string): AddressLinksResponse {
   return {
     primary_address: address,
@@ -30,6 +43,12 @@ function linksResponse(address: string): AddressLinksResponse {
   };
 }
 
+
+/**
+ * Get the linked addresses for a given address query parameter.
+ * @param {Request} request - The incoming request object.
+ * @returns {Promise<NextResponse>} The response containing linked addresses or an error message.
+ */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -52,6 +71,12 @@ export async function GET(request: Request) {
   }
 }
 
+
+/**
+ * Create a new address link.
+ * @param {Request} request - The incoming request object containing the link details.
+ * @returns {Promise<NextResponse>} The response indicating success or failure of the link creation.
+ */
 export async function POST(request: Request) {
   try {
     let payload: Partial<AddressLinkCreate>;
@@ -187,6 +212,12 @@ export async function POST(request: Request) {
   }
 }
 
+
+/**
+ * Delete an existing address link.
+ * @param {Request} request - The incoming request object containing the link details to delete.
+ * @returns {Promise<NextResponse>} The response indicating success or failure of the link deletion.
+ */
 export async function DELETE(request: Request) {
   try {
     let payload: Partial<AddressLinkDelete>;
