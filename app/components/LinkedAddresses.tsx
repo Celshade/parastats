@@ -1,9 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { buildUnlinkMessage } from '@/app/utils/addressLinks';
-import type { AddressLinksResponse } from '@/app/api/account/types';
+import { useAddressLinks } from '@/app/hooks/useAddressLinks';
 import LinkAddressModal from '@/app/components/modals/LinkAddressModal';
 
 
@@ -32,88 +31,8 @@ export default function LinkedAddresses({
   isOwner,
   className = '',
 }: LinkedAddressesProps) {
-  const [links, setLinks] = useState<AddressLinksResponse | null>(null);
+  const { links, unlinking, error, unlink, refetch } = useAddressLinks(userId);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [unlinking, setUnlinking] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchLinks = useCallback(async () => {
-    try {
-      const response = await fetch(
-        `/api/account/links?address=${encodeURIComponent(userId)}`
-      );
-      if (response.ok) {
-        setLinks(await response.json());
-      }
-    } catch (err) {
-      console.error('Failed to fetch address links:', err);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    fetchLinks();
-  }, [fetchLinks]);
-
-  const handleUnlink = async (linkedAddress: string) => {
-    setUnlinking(linkedAddress);
-    setError(null);
-
-    try {
-      const timestamp = Math.floor(Date.now() / 1000);
-      const message = buildUnlinkMessage(userId, linkedAddress, timestamp);
-
-      const { request, MessageSigningProtocols } = await import(
-        '@sats-connect/core'
-      );
-
-      const signResponse = await request('signMessage', {
-        address: userId,
-        message,
-        protocol: MessageSigningProtocols.BIP322,
-      });
-
-      if (signResponse.status !== 'success') {
-        throw new Error('Failed to sign message');
-      }
-
-      let signature: string;
-      if (typeof signResponse.result === 'string') {
-        signature = signResponse.result;
-      } else if (
-        signResponse.result &&
-        typeof signResponse.result === 'object' &&
-        'signature' in signResponse.result
-      ) {
-        signature = signResponse.result.signature;
-      } else {
-        throw new Error('Unexpected signature format');
-      }
-
-      const response = await fetch('/api/account/links', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          primary_address: userId,
-          linked_address: linkedAddress,
-          timestamp,
-          signature,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to unlink address');
-      }
-
-      setLinks(data);
-    } catch (err) {
-      console.error('Unlink error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to unlink');
-    } finally {
-      setUnlinking(null);
-    }
-  };
 
   // This page's address is an alias of another primary: show the banner
   // (all viewers), no management panel
@@ -168,7 +87,7 @@ export default function LinkedAddresses({
             >
               <span className="font-mono break-all">{linked}</span>
               <button
-                onClick={() => handleUnlink(linked)}
+                onClick={() => unlink(linked)}
                 disabled={unlinking !== null}
                 className="px-2 py-1 border border-border hover:bg-secondary-hover transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
               >
@@ -189,7 +108,7 @@ export default function LinkedAddresses({
         isOpen={showLinkModal}
         onClose={() => setShowLinkModal(false)}
         primaryAddress={userId}
-        onLinked={fetchLinks}
+        onLinked={refetch}
       />
     </div>
   );

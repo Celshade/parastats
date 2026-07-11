@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
-import { buildLinkMessage } from '@/app/utils/addressLinks';
-import ManualSignModal, {
-  ManualSignRequest,
-} from '@/app/components/modals/ManualSignModal';
+import ManualSignModal from '@/app/components/modals/ManualSignModal';
+import { useLinkAddressFlow } from '@/app/hooks/useLinkAddressFlow';
 
 /**
  * Props for the LinkAddressModal component.
@@ -35,28 +33,23 @@ export default function LinkAddressModal({
   primaryAddress,
   onLinked,
 }: LinkAddressModalProps) {
-  const [oldAddress, setOldAddress] = useState('');
-  const [isSigning, setIsSigning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [manualRequest, setManualRequest] = useState<ManualSignRequest | null>(
-    null
-  );
-  const [pendingLink, setPendingLink] = useState<{
-    message: string;
-    timestamp: number;
-    primarySignature: string;
-  } | null>(null);
+  const {
+    oldAddress,
+    setOldAddress,
+    isSigning,
+    error,
+    setError,
+    manualRequest,
+    reset,
+    startLink,
+    submitManualSignature,
+    cancelManualSign,
+  } = useLinkAddressFlow(primaryAddress, onLinked, onClose);
 
   // Reset state when the modal closes
   useEffect(() => {
-    if (!isOpen) {
-      setOldAddress('');
-      setIsSigning(false);
-      setError(null);
-      setManualRequest(null);
-      setPendingLink(null);
-    }
-  }, [isOpen]);
+    if (!isOpen) reset();
+  }, [isOpen, reset]);
 
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
@@ -74,7 +67,7 @@ export default function LinkAddressModal({
 
   const trimmedAddress = oldAddress.trim();
 
-  const handleStartLink = async () => {
+  const handleStartLink = () => {
     if (!isValidBitcoinAddress(trimmedAddress)) {
       setError('Enter a valid Bitcoin address');
       return;
@@ -85,91 +78,11 @@ export default function LinkAddressModal({
       return;
     }
 
-    setIsSigning(true);
-    setError(null);
-
-    try {
-      const timestamp = Math.floor(Date.now() / 1000);
-      const message = buildLinkMessage(
-        primaryAddress,
-        trimmedAddress,
-        timestamp
-      );
-
-      // Sign with the connected primary wallet first (BIP322 via Xverse)
-      const { request, MessageSigningProtocols } = await import(
-        '@sats-connect/core'
-      );
-
-      const signResponse = await request('signMessage', {
-        address: primaryAddress,
-        message,
-        protocol: MessageSigningProtocols.BIP322,
-      });
-
-      if (signResponse.status !== 'success') {
-        throw new Error('Failed to sign message');
-      }
-
-      let primarySignature: string;
-      if (typeof signResponse.result === 'string') {
-        primarySignature = signResponse.result;
-      } else if (
-        signResponse.result &&
-        typeof signResponse.result === 'object' &&
-        'signature' in signResponse.result
-      ) {
-        primarySignature = signResponse.result.signature;
-      } else {
-        throw new Error('Unexpected signature format');
-      }
-
-      // Now collect the old address's signature via manual paste
-      setPendingLink({ message, timestamp, primarySignature });
-      setManualRequest({ message, address: trimmedAddress });
-    } catch (err) {
-      console.error('Link signing error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to sign message');
-    } finally {
-      setIsSigning(false);
-    }
+    startLink(trimmedAddress);
   };
 
-  const handleManualSignature = async (linkedSignature: string) => {
-    if (!pendingLink) return;
-
-    setManualRequest(null);
-    setIsSigning(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/account/links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          primary_address: primaryAddress,
-          linked_address: trimmedAddress,
-          timestamp: pendingLink.timestamp,
-          primary_signature: pendingLink.primarySignature,
-          linked_signature: linkedSignature,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to link address');
-      }
-
-      onLinked();
-      onClose();
-    } catch (err) {
-      console.error('Link submit error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to link address');
-    } finally {
-      setIsSigning(false);
-      setPendingLink(null);
-    }
+  const handleManualSignature = (linkedSignature: string) => {
+    submitManualSignature(trimmedAddress, linkedSignature);
   };
 
   const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -273,10 +186,7 @@ export default function LinkAddressModal({
       <ManualSignModal
         request={manualRequest}
         onSubmit={handleManualSignature}
-        onCancel={() => {
-          setManualRequest(null);
-          setPendingLink(null);
-        }}
+        onCancel={cancelManualSign}
       />
     </>
   );
