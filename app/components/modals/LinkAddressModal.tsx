@@ -7,10 +7,16 @@ import ManualSignModal, {
   ManualSignRequest,
 } from '@/app/components/modals/ManualSignModal';
 
+/**
+ * Props for the LinkAddressModal component.
+ * @property {boolean} isOpen - Whether the modal is open.
+ * @property {() => void} onClose - Callback function to close the modal.
+ * @property {string} primaryAddress - The connected (Xverse) address the old address gets linked to.
+ * @property {() => void} onLinked - Callback function to call after a successful link.
+ */
 interface LinkAddressModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // The connected (Xverse) address the old address gets linked to
   primaryAddress: string;
   onLinked: () => void;
 }
@@ -20,6 +26,8 @@ interface LinkAddressModalProps {
  * addresses sign the same timestamped challenge: the primary through
  * Xverse, the old address externally (Sparrow/hardware wallet) with the
  * signature pasted into ManualSignModal.
+ * @param {LinkAddressModalProps} props - The props object.
+ * @returns {JSX.Element | null} The rendered LinkAddressModal component or null if not open.
  */
 export default function LinkAddressModal({
   isOpen,

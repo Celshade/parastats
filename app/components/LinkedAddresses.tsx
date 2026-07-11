@@ -6,16 +6,26 @@ import { buildUnlinkMessage } from '@/app/utils/addressLinks';
 import type { AddressLinksResponse } from '@/app/api/account/types';
 import LinkAddressModal from '@/app/components/modals/LinkAddressModal';
 
+
+/**
+ * Props for the LinkedAddresses component.
+ * @property {string} userId - The user ID (address) for which to display linked addresses.
+ * @property {boolean} isOwner - Whether the current viewer is the owner of the address.
+ * @property {string} [className] - Optional additional CSS classes for styling.
+ */
 interface LinkedAddressesProps {
   userId: string;
   isOwner: boolean;
   className?: string;
 }
 
+
 /**
  * Linked (alias) addresses for a user page. Everyone sees the "linked
  * to" banner when the page's address is an alias; the owner additionally
  * gets a panel to create and remove links.
+ * @param {LinkedAddressesProps} props - The props object.
+ * @returns {JSX.Element | null} The rendered LinkedAddresses component.
  */
 export default function LinkedAddresses({
   userId,

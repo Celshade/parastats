@@ -7,8 +7,9 @@ import { getDb } from '@/lib/db';
  *
  * The challenge-message builders shared with the client live in
  * app/utils/addressLinks.ts (this module is server-only).
+ * @param {string} primaryAddress - The primary address to look up linked addresses for.
+ * @returns An array of addresses linked to the primary address, in order of link time.
  */
-
 export function getLinkedAddresses(primaryAddress: string): string[] {
   const db = getDb();
   const rows = db
@@ -21,12 +22,21 @@ export function getLinkedAddresses(primaryAddress: string): string[] {
   return rows.map((row) => row.linked_address);
 }
 
-/** The address itself plus every address linked to it. */
+
+/**
+ * The address itself plus every address linked to it.
+ * @param {string} address - The address to resolve.
+ * @returns {string[]} An array containing the address itself and all linked addresses.
+ */
 export function resolveAddressSet(address: string): string[] {
   return [address, ...getLinkedAddresses(address)];
 }
 
-/** Reverse lookup: the primary this address is linked to, if any. */
+
+/** Reverse lookup: the primary this address is linked to, if any.
+ * @param {string} address - The address to look up the primary for.
+ * @returns {string | null} The primary address if it exists, otherwise null.
+ */
 export function getPrimaryFor(address: string): string | null {
   const db = getDb();
   const row = db

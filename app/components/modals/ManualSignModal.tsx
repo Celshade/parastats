@@ -2,17 +2,40 @@
 
 import { useEffect, useState } from 'react';
 
+/**
+ * The request object passed to the ManualSignModal component.
+ * It contains the message to be signed and the address that should sign it.
+ * @property {string} message - The message to be signed.
+ * @property {string | null} address - The address that should sign the message.
+ */
 export interface ManualSignRequest {
   message: string;
   address: string | null;
 }
 
+
+/**
+ * A modal component that prompts the user to manually sign a message with their wallet.
+ * It displays the message to be signed and provides a textarea for the user to paste the signature.
+ * The modal includes buttons to copy the message, submit the signature, or cancel the operation.
+ * @property {ManualSignRequest | null} request - The signing request object.
+ * @property {(signature: string) => void} onSubmit - Callback func to handle signature submission.
+ * @property {() => void} onCancel - Callback func to handle cancellation of the signing operation.
+ */
 interface ManualSignModalProps {
   request: ManualSignRequest | null;
   onSubmit: (signature: string) => void;
   onCancel: () => void;
 }
 
+
+/**
+ * Create a modal for manually signing a message with a wallet.
+ * It displays the message to be signed and provides a textarea for the user to paste the signature.
+ * The modal also includes buttons to copy the message, submit the signature, or cancel the operation.
+ * @param {ManualSignModalProps} props - The props obj containing request, onSubmit, and onCancel.
+ * @returns {JSX.Element | null} The rendered modal component or null if no request is provided.
+ */
 export default function ManualSignModal({ request, onSubmit, onCancel }: ManualSignModalProps) {
   const [signature, setSignature] = useState('');
   const [copied, setCopied] = useState(false);
