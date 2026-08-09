@@ -84,6 +84,18 @@ function buildAuctionMessage(
     return `${username}|${tier}|${tierSlotIndex}|auction`;
 }
 
+function getSafeClaimUrl(value: unknown): string | null {
+    if (typeof value !== "string" || value === "") return null;
+
+    try {
+        const url = new URL(value, window.location.origin);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+        return url.toString();
+    } catch {
+        return null;
+    }
+}
+
 // Surface real failures but stay quiet when the user simply cancels signing.
 function getClaimErrorMessage(err: unknown): string | null {
     if (err instanceof SignCancelledError) {
@@ -405,9 +417,13 @@ export default function DispenserClaim({ userId, className = "", collapsed = fal
             setLocalClaimed((prev) => new Set(prev).add(slotIndex));
 
             // Link assets dispense a redemption URL, redirect to it
-            if (data.claim_url) {
-                window.location.assign(data.claim_url);
+            const claimUrl = getSafeClaimUrl(data.claim_url);
+            if (claimUrl) {
+                window.location.assign(claimUrl);
                 return;
+            }
+            if (data.claim_url) {
+                setError(`Claimed, but the redemption link could not be opened automatically: ${data.claim_url}`);
             }
         } catch (err) {
             console.error("Claim error:", err);
@@ -457,9 +473,13 @@ export default function DispenserClaim({ userId, className = "", collapsed = fal
             setManualDestination("");
 
             // Link assets dispense a redemption URL, redirect to it
-            if (data.claim_url) {
-                window.location.assign(data.claim_url);
+            const claimUrl = getSafeClaimUrl(data.claim_url);
+            if (claimUrl) {
+                window.location.assign(claimUrl);
                 return;
+            }
+            if (data.claim_url) {
+                setError(`Claimed, but the redemption link could not be opened automatically: ${data.claim_url}`);
             }
         } catch (err) {
             console.error("Manual claim error:", err);

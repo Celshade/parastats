@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
+import { upstreamErrorResponse } from '@/app/api/lib/upstream-error';
 import type { AccountMetadataUpdate } from '@/app/api/account/types';
 import { getDb } from '@/lib/db';
 
@@ -56,11 +57,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      return NextResponse.json(
-        { error: `Failed to update account metadata: ${text || response.statusText}` },
-        { status: response.status }
-      );
+      return upstreamErrorResponse(response, 'Failed to update account metadata', 'Account metadata update failed');
     }
 
     const accountData = await response.json();

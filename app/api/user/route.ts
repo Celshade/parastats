@@ -38,13 +38,13 @@ export async function POST(request: Request) {
     const existingUser = db.prepare('SELECT * FROM monitored_users WHERE address = ?').get(address) as MonitoredUser | undefined;
 
     if (existingUser) {
-      // If user exists but was inactive, reactivate them and reset failed attempts
+      // If user exists but was inactive, reactivate them. failed_attempts is
+      // preserved so strangers can't reset the collector's deactivation state.
       if (!existingUser.is_active) {
         db.prepare(`
-          UPDATE monitored_users 
-          SET 
+          UPDATE monitored_users
+          SET
             is_active = 1,
-            failed_attempts = 0,
             updated_at = ?
           WHERE address = ?
         `).run(now, address);

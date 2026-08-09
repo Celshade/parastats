@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
+import { upstreamErrorResponse } from '@/app/api/lib/upstream-error';
 import type { AccountUpdate } from '@/app/api/account/types';
 
 export async function POST(request: Request) {
@@ -46,11 +47,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      return NextResponse.json(
-        { error: `Failed to update user account: ${text || response.statusText}` },
-        { status: response.status }
-      );
+      return upstreamErrorResponse(response, 'Failed to update user account', 'Account update failed');
     }
 
     const accountData = await response.json();

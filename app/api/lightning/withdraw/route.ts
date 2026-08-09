@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { fetchWithTimeout } from '@/app/api/lib/fetch-with-timeout';
+import { upstreamErrorResponse } from '@/app/api/lib/upstream-error';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
 
 export async function POST(request: Request) {
   try {
     const lightningApiUrl = process.env.LIGHTNING_API_URL;
+
+    if (!lightningApiUrl) {
+      console.error('LIGHTNING_API_URL not configured');
+      return NextResponse.json(
+        { error: 'Lightning withdrawals not configured' },
+        { status: 500 }
+      );
+    }
 
     // Get lightning token from header
     const lightningToken = request.headers.get('X-Lightning-Token');
@@ -57,11 +66,7 @@ export async function POST(request: Request) {
     );
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      return NextResponse.json(
-        { error: `Failed to execute withdraw: ${errorText}` },
-        { status: response.status }
-      );
+      return upstreamErrorResponse(response, 'Failed to execute withdraw', 'Lightning withdraw failed');
     }
 
     const data = await response.json();

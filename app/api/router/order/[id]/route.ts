@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetch } from '@/lib/http-client';
 
 export async function GET(
   _request: NextRequest,

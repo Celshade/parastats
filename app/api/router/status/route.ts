@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { fetch } from '@/lib/http-client';
 
 export async function GET() {
   const routerBase = process.env.ROUTER_API_URL;
