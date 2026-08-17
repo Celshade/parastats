@@ -36,21 +36,101 @@ export interface UpstreamTarget {
   password: string | null;
 }
 
-export interface DownstreamInfo {
-  user_count: number;
-  worker_count: number;
-  session_count: number;
-  disconnected_count: number;
-  idle_count: number;
-  stats: MiningStats;
+export interface UpstreamTotals {
+  users: number;
+  orders: number;
+  accepted_shares: number;
+  rejected_shares: number;
+  accepted_work: number;
+  rejected_work: number;
+  delivered_hash_days: number;
+  best_share: number | null;
+  last_share: number | null;
 }
 
-export interface UpstreamSummary {
-  user_count: number;
-  worker_count: number;
-  idle_count: number;
-  disconnected_count: number;
-  stats: MiningStats;
+export interface DownstreamTotals {
+  users: number;
+  workers: number;
+  accepted_shares: number;
+  rejected_shares: number;
+  accepted_work: number;
+  rejected_work: number;
+  delivered_hash_days: number;
+  best_share: number | null;
+  last_share: number | null;
+}
+
+interface RealtimeStats {
+  hashrate_1m: number;
+  hashrate_5m: number;
+  hashrate_15m: number;
+  hashrate_1hr: number;
+  hashrate_6hr: number;
+  hashrate_1d: number;
+  hashrate_7d: number;
+  sps_1m: number;
+  sps_5m: number;
+  sps_15m: number;
+  sps_1hr: number;
+  accepted_shares: number;
+  rejected_shares: number;
+  accepted_work: number;
+  rejected_work: number;
+}
+
+export interface UpstreamStats extends RealtimeStats {
+  users: number;
+  workers: number;
+  orders: number;
+  pending: number;
+  disconnected: number;
+  totals: UpstreamTotals;
+}
+
+export interface DownstreamStats extends RealtimeStats {
+  users: number;
+  workers: number;
+  sessions: number;
+  idle: number;
+  disconnected: number;
+  totals: DownstreamTotals;
+}
+
+export interface OrphanReceipt {
+  derivation_index: number;
+  address: string;
+  amount: number;
+  first_seen_height: number;
+}
+
+export interface WalletInfo {
+  synced: boolean;
+  orphan_receipts: OrphanReceipt[];
+}
+
+export interface IntentClaimCounts {
+  enonce1: number;
+  ip: number;
+}
+
+export interface PlacementCounts {
+  intent: number;
+  resumed: number;
+  redirected: number;
+  estimated: number;
+  blind: number;
+}
+
+export interface RoutingInfo {
+  sessions_trimmed_1h: number;
+  intents_created_1h: number;
+  intents_expired_1h: number;
+  intent_claims_1h: IntentClaimCounts;
+  placements_1h: PlacementCounts;
+  deficit_hashrate: number;
+  bucket_order_count: number;
+  sink_order_count: number;
+  starving_order_count: number;
 }
 
 export interface RouterStatus {
@@ -58,26 +138,26 @@ export interface RouterStatus {
   block_count: number;
   recent_blocks: string[];
   hash_price: number;
+  premium_percent: number;
   total_capacity_hash_days: number;
   used_capacity_hash_days: number;
-  bucket_order_count: number;
-  sink_order_count: number;
-  starving_order_count: number;
-  wallet_synced: boolean;
   halt: boolean;
   boost: boolean;
-  upstream: UpstreamSummary;
-  downstream: DownstreamInfo;
+  wallet: WalletInfo;
+  routing: RoutingInfo;
+  upstream: UpstreamStats;
+  downstream: DownstreamStats;
+  git_commit: string;
 }
 
 export interface SessionDetail {
-  id: string;
+  id: number;
   order_id: number;
   address: string;
   worker_name: string;
   username: string;
   enonce1: string;
-  version_mask: number | null;
+  version_mask: string | null;
   stats: MiningStats;
 }
 
