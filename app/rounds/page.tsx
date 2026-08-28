@@ -129,7 +129,7 @@ export default function RoundsPage() {
   useEffect(() => {
     const fetchNetworkDifficulty = async () => {
       try {
-        const data = await getHashrate('1m');
+        const data = await getHashrate();
         setNetworkDifficulty(data.currentDifficulty ?? null);
       } catch (error) {
         console.error('Error fetching current network difficulty:', error);

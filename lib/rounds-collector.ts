@@ -27,11 +27,13 @@ const CONFIG = {
   PARTICIPANT_FETCH_TIMEOUT: 300_000, // 5 minutes
   PARTICIPANT_REFETCH_COOLDOWN: 360_000, // 6 minutes - skip re-trigger if fetched recently
   ROUNDS_SYNC_INTERVAL: '*/10 * * * *', // every 10 minutes
+  DIFFICULTY_FETCH_COOLDOWN: 86_400_000, // 24 hours between attempts for the same round
 } as const;
 
 let isCollectingCurrent = false;
 let isSyncingRounds = false;
 let isFetchingPendingParticipants = false;
+let isFillingNetworkDifficulties = false;
 let syncJob: ReturnType<typeof cron.schedule> | null = null;
 let currentRoundJob: ReturnType<typeof cron.schedule> | null = null;
 
@@ -261,38 +263,58 @@ export async function collectCurrentRound(): Promise<void> {
  * and cached in the rounds table.
  */
 export async function fillNetworkDifficulties(): Promise<void> {
-  const db = getDb();
-  const unfilled = db.prepare(`
-    SELECT block_height, block_hash FROM rounds
-    WHERE network_difficulty IS NULL AND block_height != 0
-  `).all() as { block_height: number; block_hash: string }[];
-
-  if (unfilled.length === 0) return;
-
-  const update = db.prepare('UPDATE rounds SET network_difficulty = ? WHERE block_height = ?');
-
-  let filled = 0;
-
-  for (const round of unfilled) {
-    try {
-      const block = await withRetry(
-        () => fetchJson<{ id: string; difficulty?: number }>(
-          `https://mempool.space/api/v1/block/${round.block_hash}`,
-          { timeout: 10_000 }
-        ),
-        `GET mempool.space block ${round.block_height}`
-      );
-      if (block.difficulty !== undefined) {
-        update.run(block.difficulty, round.block_height);
-        filled++;
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to fetch network difficulty for block ${round.block_height}: ${errorMsg}`);
-    }
+  if (isFillingNetworkDifficulties) {
+    console.warn('Network difficulty fill already running, skipping');
+    return;
   }
 
-  console.log(`🔄 Filled network difficulty for ${filled}/${unfilled.length} round(s)`);
+  isFillingNetworkDifficulties = true;
+  try {
+    const db = getDb();
+    const now = Math.floor(Date.now() / 1000);
+    const unfilled = db.prepare(`
+      SELECT block_height, block_hash, network_difficulty_fetched_at FROM rounds
+      WHERE network_difficulty IS NULL AND block_height != 0
+    `).all() as { block_height: number; block_hash: string; network_difficulty_fetched_at: number | null }[];
+
+    const due = unfilled.filter(
+      round => !round.network_difficulty_fetched_at ||
+        (now - round.network_difficulty_fetched_at) >= CONFIG.DIFFICULTY_FETCH_COOLDOWN / 1000
+    );
+
+    if (due.length === 0) return;
+
+    const update = db.prepare('UPDATE rounds SET network_difficulty = ?, network_difficulty_fetched_at = ? WHERE block_height = ?');
+    const markAttempted = db.prepare('UPDATE rounds SET network_difficulty_fetched_at = ? WHERE block_height = ?');
+
+    let filled = 0;
+
+    for (const round of due) {
+      try {
+        const block = await withRetry(
+          () => fetchJson<{ id: string; difficulty?: number }>(
+            `https://mempool.space/api/v1/block/${round.block_hash}`,
+            { timeout: 10_000 }
+          ),
+          `GET mempool.space block ${round.block_height}`
+        );
+        if (block.difficulty !== undefined) {
+          update.run(block.difficulty, now, round.block_height);
+          filled++;
+        } else {
+          markAttempted.run(now, round.block_height);
+        }
+      } catch (error) {
+        markAttempted.run(now, round.block_height);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`Failed to fetch network difficulty for block ${round.block_height}: ${errorMsg}`);
+      }
+    }
+
+    console.log(`🔄 Filled network difficulty for ${filled}/${due.length} round(s)`);
+  } finally {
+    isFillingNetworkDifficulties = false;
+  }
 }
 
 /**
