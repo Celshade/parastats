@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { getDb } from './db';
-import { fetch, HttpError, isRetryableError } from './http-client';
+import { fetch, fetchJson, HttpError, isRetryableError } from './http-client';
 
 // Types for API responses
 interface Round {
@@ -256,6 +256,46 @@ export async function collectCurrentRound(): Promise<void> {
 }
 
 /**
+ * Fill in network difficulty for rounds that don't have it yet. Difficulty is
+ * immutable per block, so each round is fetched exactly once from mempool.space
+ * and cached in the rounds table.
+ */
+export async function fillNetworkDifficulties(): Promise<void> {
+  const db = getDb();
+  const unfilled = db.prepare(`
+    SELECT block_height, block_hash FROM rounds
+    WHERE network_difficulty IS NULL AND block_height != 0
+  `).all() as { block_height: number; block_hash: string }[];
+
+  if (unfilled.length === 0) return;
+
+  const update = db.prepare('UPDATE rounds SET network_difficulty = ? WHERE block_height = ?');
+
+  let filled = 0;
+
+  for (const round of unfilled) {
+    try {
+      const block = await withRetry(
+        () => fetchJson<{ id: string; difficulty?: number }>(
+          `https://mempool.space/api/v1/block/${round.block_hash}`,
+          { timeout: 10_000 }
+        ),
+        `GET mempool.space block ${round.block_height}`
+      );
+      if (block.difficulty !== undefined) {
+        update.run(block.difficulty, round.block_height);
+        filled++;
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to fetch network difficulty for block ${round.block_height}: ${errorMsg}`);
+    }
+  }
+
+  console.log(`🔄 Filled network difficulty for ${filled}/${unfilled.length} round(s)`);
+}
+
+/**
  * Fetch and cache participants for completed rounds that are pending or errored.
  * Runs async, never blocks cron cycle.
  */
@@ -376,6 +416,9 @@ export async function fetchPendingRoundParticipants(): Promise<void> {
 export function triggerRoundsSync(): void {
   syncRounds()
     .then(newRounds => {
+      fillNetworkDifficulties().catch(err =>
+        console.error('Error filling network difficulties:', err)
+      );
       if (newRounds > 0) {
         // New round detected — fetch participants in background
         fetchPendingRoundParticipants().catch(err =>
@@ -401,6 +444,9 @@ export function startRoundsCollector(): void {
   // Startup: sync rounds, collect current, fetch pending participants
   syncRounds()
     .then(() => {
+      fillNetworkDifficulties().catch(err =>
+        console.error('Error filling network difficulties on startup:', err)
+      );
       // After syncing rounds, fetch any pending participant data in background
       fetchPendingRoundParticipants().catch(err =>
         console.error('Error fetching pending round participants on startup:', err)
@@ -415,6 +461,9 @@ export function startRoundsCollector(): void {
   // Schedule periodic round list sync + retry any pending/errored participants
   syncJob = cron.schedule(CONFIG.ROUNDS_SYNC_INTERVAL, async () => {
     await syncRounds();
+    fillNetworkDifficulties().catch(err =>
+      console.error('Error filling network difficulties:', err)
+    );
     fetchPendingRoundParticipants().catch(err =>
       console.error('Error fetching pending round participants:', err)
     );

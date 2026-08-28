@@ -19,7 +19,7 @@ export interface RoundRow {
   participant_status: ParticipantStatus;
   block_participant_status: ParticipantStatus;
   total_work: number;
-  network_difficulty?: number | null;
+  network_difficulty: number | null;
 }
 
 /**

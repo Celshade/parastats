@@ -825,7 +825,6 @@ export default function UserDashboard() {
           {/* Blocks Section */}
           {(!hasInitiallyLoaded || allRounds.length > 0) && (
               <div
-                id="blocks"
                 className={getCollapsibleContainerClassName(
                   'w-full bg-background border border-border p-4 sm:p-6 shadow-md',
                   collapsedSections.rounds,

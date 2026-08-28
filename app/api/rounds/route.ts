@@ -9,6 +9,7 @@ export async function GET() {
 
     const rows = db.prepare(`
       SELECT r.block_height, r.block_hash, r.coinbase_value, r.winner_diff, r.winner_username, r.participant_status,
+             r.network_difficulty,
              m.is_public AS winner_is_public,
              COALESCE(w.total_work, 0) AS total_work
       FROM rounds r
@@ -27,31 +28,6 @@ export async function GET() {
       `SELECT MAX(top_diff) AS best_diff FROM round_participants WHERE block_height = 0`
     ).get() as { best_diff: number | null };
 
-    // Network difficulty per completed block, fetched in parallel from mempool.space.
-    const hashes = rows
-      .map((row) => row.block_hash)
-      .filter((hash): hash is string => hash !== null);
-    let difficultyByHash = new Map<string, number>();
-    try {
-      if (hashes.length > 0) {
-        const responses = await Promise.all(
-          hashes.map((hash) =>
-            fetch(`https://mempool.space/api/v1/block/${hash}`)
-          )
-        );
-        for (const response of responses) {
-          if (response.ok) {
-            const block = (await response.json()) as { id: string; difficulty?: number };
-            if (block.difficulty !== undefined) {
-              difficultyByHash.set(block.id, block.difficulty);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching network difficulty from mempool.space:', error);
-    }
-
     // PRIVACY: only return truncated addresses, and redact winners who opted
     // out of public listing (unmonitored winners stay visible, matching the
     // participant queries).
@@ -61,7 +37,6 @@ export async function GET() {
         winner_username && (winner_is_public === null || winner_is_public === 1)
           ? formatAddress(winner_username)
           : null,
-      network_difficulty: row.block_hash ? (difficultyByHash.get(row.block_hash) ?? null) : null,
     }));
 
     // Prepend synthetic current-round entry if participant data exists

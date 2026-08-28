@@ -255,6 +255,7 @@ function initializeTables() {
 
   addColumnIfNotExists(db, `ALTER TABLE rounds ADD COLUMN block_participant_status TEXT NOT NULL DEFAULT 'pending'`);
   addColumnIfNotExists(db, `ALTER TABLE rounds ADD COLUMN block_participant_fetched_at INTEGER`);
+  addColumnIfNotExists(db, `ALTER TABLE rounds ADD COLUMN network_difficulty REAL`);
 
   // Add total_work to existing round_participants caches. When newly added,
   // re-mark completed rounds as pending so the collector refetches real work.
