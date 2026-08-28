@@ -22,6 +22,36 @@ export async function GET() {
       ORDER BY r.block_height DESC
     `).all() as (RoundRow & { winner_is_public: number | null })[];
 
+    // Best diff in the current round across all participants.
+    const bestDiffRow = db.prepare(
+      `SELECT MAX(top_diff) AS best_diff FROM round_participants WHERE block_height = 0`
+    ).get() as { best_diff: number | null };
+
+    // Network difficulty per completed block, fetched in parallel from mempool.space.
+    const hashes = rows
+      .map((row) => row.block_hash)
+      .filter((hash): hash is string => hash !== null);
+    let difficultyByHash = new Map<string, number>();
+    try {
+      if (hashes.length > 0) {
+        const responses = await Promise.all(
+          hashes.map((hash) =>
+            fetch(`https://mempool.space/api/v1/block/${hash}`)
+          )
+        );
+        for (const response of responses) {
+          if (response.ok) {
+            const block = (await response.json()) as { id: string; difficulty?: number };
+            if (block.difficulty !== undefined) {
+              difficultyByHash.set(block.id, block.difficulty);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching network difficulty from mempool.space:', error);
+    }
+
     // PRIVACY: only return truncated addresses, and redact winners who opted
     // out of public listing (unmonitored winners stay visible, matching the
     // participant queries).
@@ -31,6 +61,7 @@ export async function GET() {
         winner_username && (winner_is_public === null || winner_is_public === 1)
           ? formatAddress(winner_username)
           : null,
+      network_difficulty: row.block_hash ? (difficultyByHash.get(row.block_hash) ?? null) : null,
     }));
 
     // Prepend synthetic current-round entry if participant data exists
@@ -43,11 +74,12 @@ export async function GET() {
         block_height: 0,
         block_hash: null,
         coinbase_value: null,
-        winner_diff: null,
+        winner_diff: bestDiffRow.best_diff,
         winner_username: null,
         participant_status: 'complete',
         block_participant_status: 'complete',
         total_work: currentRound.total_work,
+        network_difficulty: null,
       });
     }
 

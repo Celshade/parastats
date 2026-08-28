@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import HashrateChart from '../../components/HashrateChart';
 import { isValidBitcoinAddress } from '@/app/utils/validators';
 import { getUserData, getHistoricalUserStats, getHashrate, updateAccountMetadata, getUserBlockDiffs, getUserRounds, getUserBadges, type UserBlockDiffEntry, type UserRoundsResponse, type BadgesPayload } from '@/app/utils/api';
@@ -87,7 +87,6 @@ export default function UserDashboard() {
   const [badgesData, setBadgesData] = useState<BadgesPayload | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>(defaultCollapsedSections);
   const [loadedCollapsePreferencesUserId, setLoadedCollapsePreferencesUserId] = useState<string | null>(null);
-  const blocksSectionRef = useRef<HTMLDivElement>(null);
 
   const {
     address,
@@ -422,20 +421,8 @@ export default function UserDashboard() {
     }));
   };
 
-  // Expand the Blocks section if needed, then scroll it into view. Used by
-  // the "N more blocks mined" badge so users can browse the full block list
-  // instead of a truncated in-badge summary.
-  const scrollToBlocks = () => {
-    setCollapsedSections(value => ({ ...value, rounds: false }));
-    requestAnimationFrame(() => {
-      const prefersReducedMotion = window.matchMedia(
-        '(prefers-reduced-motion: reduce)'
-      ).matches;
-      blocksSectionRef.current?.scrollIntoView({
-        behavior: prefersReducedMotion ? 'auto' : 'smooth',
-        block: 'start',
-      });
-    });
+  const openBlocksPage = () => {
+    router.push('/rounds');
   };
 
   const handleToggleVisibility = async () => {
@@ -613,7 +600,7 @@ export default function UserDashboard() {
         <BadgeDisplay
           badges={badgesData}
           loading={!hasInitiallyLoaded}
-          onBlocksClick={allRounds.length > 0 ? scrollToBlocks : undefined}
+          onBlocksClick={openBlocksPage}
         />
       ),
       icon: (
@@ -838,7 +825,6 @@ export default function UserDashboard() {
           {/* Blocks Section */}
           {(!hasInitiallyLoaded || allRounds.length > 0) && (
               <div
-                ref={blocksSectionRef}
                 id="blocks"
                 className={getCollapsibleContainerClassName(
                   'w-full bg-background border border-border p-4 sm:p-6 shadow-md',

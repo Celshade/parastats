@@ -9,10 +9,7 @@ interface StackedMedalProps {
   icon: ReactNode;
   /** When false, never render the count bubble (count still gates rendering). */
   showCount?: boolean;
-  /**
-   * When provided, renders the medal as a clickable button instead of a
-   * static div (used e.g. to jump to a related section on click).
-   */
+  /** When provided, renders the medal as a clickable button instead of a static div. */
   onClick?: () => void;
 }
 
