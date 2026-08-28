@@ -84,15 +84,15 @@ export async function GET(
       `SELECT COUNT(*) AS count FROM rounds WHERE winner_username = ?`
     ).get(address) as { count: number };
 
-    // Total rounds participated (based on block participants)
+    // Total rounds participated (based on round participants)
     const participatedRow = db.prepare(
-      `SELECT COUNT(*) AS count FROM block_participants WHERE username = ?`
+      `SELECT COUNT(*) AS count FROM round_participants WHERE username = ? AND block_height > 0`,
     ).get(address) as { count: number };
 
     // History with rank, total participants, and winner status per round
     const history = db.prepare(`
       WITH user_blocks AS (
-        SELECT block_height FROM block_participants WHERE username = ?
+        SELECT block_height FROM round_participants WHERE username = ? AND block_height > 0
       ),
       ranked AS (
         SELECT

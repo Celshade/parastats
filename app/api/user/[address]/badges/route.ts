@@ -1,16 +1,35 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getBadgesCached } from '@/lib/badges-collector';
+import { isValidBitcoinAddress } from '@/app/utils/validators';
+import { checkRateLimit, getRateLimitHeaders } from '@/app/api/lib/rate-limit';
 import type { BadgesPayload } from '@/lib/badge-types';
 
 export type UserBadgesResponse = BadgesPayload;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ address: string }> }
 ) {
+  const rateLimitResult = checkRateLimit(request);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      {
+        status: 429,
+        headers: getRateLimitHeaders(rateLimitResult),
+      }
+    );
+  }
+
   try {
     const { address } = await params;
+
+    if (!isValidBitcoinAddress(address)) {
+      return NextResponse.json({ error: 'Invalid Bitcoin address' }, { status: 400 });
+    }
+
     const db = getDb();
 
     // Privacy check: return 403 if user is private

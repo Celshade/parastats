@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     });
     const contentType = res.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {

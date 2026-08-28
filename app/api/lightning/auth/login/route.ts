@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { fetchWithTimeout } from '@/app/api/lib/fetch-with-timeout';
+import { upstreamErrorResponse } from '@/app/api/lib/upstream-error';
+import { isValidBitcoinAddress } from '@/app/utils/validators';
 
 export async function POST(request: Request) {
   try {
     const lightningApiUrl = process.env.LIGHTNING_API_URL;
     const identifier = process.env.LIGHTNING_API_ID;
 
-    if (!identifier) {
-      console.error('LIGHTNING_API_ID not configured');
+    if (!lightningApiUrl || !identifier) {
+      console.error('LIGHTNING_API_URL or LIGHTNING_API_ID not configured');
       return NextResponse.json(
         { error: 'Lightning authentication not configured' },
         { status: 500 }
@@ -53,19 +55,19 @@ export async function POST(request: Request) {
     }
 
     if (
-      address.length < 10 || address.length > 100 ||
+      !isValidBitcoinAddress(address) ||
       public_key.length > 200 ||
       signature.length > 500 ||
       nonce.length > 200
     ) {
       return NextResponse.json(
-        { error: 'Invalid field lengths' },
+        { error: 'Invalid address or field lengths' },
         { status: 400 }
       );
     }
 
     const response = await fetchWithTimeout(
-      `${lightningApiUrl}/login/${address}/auth_sign/${identifier}`,
+      `${lightningApiUrl}/login/${encodeURIComponent(address)}/auth_sign/${encodeURIComponent(identifier)}`,
       {
         method: 'POST',
         headers: {
@@ -82,11 +84,7 @@ export async function POST(request: Request) {
     );
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      return NextResponse.json(
-        { error: `Authentication failed: ${errorText}` },
-        { status: response.status }
-      );
+      return upstreamErrorResponse(response, 'Authentication failed', 'Lightning login failed');
     }
 
     const data = await response.json();
@@ -99,4 +97,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

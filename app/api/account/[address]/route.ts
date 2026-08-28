@@ -107,7 +107,11 @@ export async function GET(
       ...(lightningTokenExpired && { lightningTokenExpired: true }),
     };
 
-    return NextResponse.json(combinedResponse);
+    return NextResponse.json(combinedResponse, {
+      // Personalized by the X-Lightning-Token header — never let a shared
+      // cache serve one user's wallet data to another.
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
   } catch (error) {
     console.error("Error in account endpoint:", error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json(

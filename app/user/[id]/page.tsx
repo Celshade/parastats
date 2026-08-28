@@ -332,7 +332,9 @@ export default function UserDashboard() {
         ]);
         if (mounted) {
           setRoundsData(rounds);
-          setBadgesData(badges);
+          if (badges !== null) {
+            setBadgesData(badges);
+          }
         }
       } catch (err) {
         console.error('Error fetching rounds data:', err);

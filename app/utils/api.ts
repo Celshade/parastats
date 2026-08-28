@@ -271,7 +271,7 @@ export async function getUserBadges(address: string): Promise<BadgesPayload | nu
   try {
     return await withRetry(async () => {
       const response = await fetch(`/api/user/${address}/badges`);
-      if (response.status === 403 || response.status === 404) {
+      if (response.status === 403 || response.status === 404 || response.status === 429) {
         return null;
       }
       if (!response.ok) {

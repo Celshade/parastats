@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { formatAddress } from '@/app/utils/formatters';
 import type { RoundRow } from './types';
 
 export async function GET() {
   try {
     const db = getDb();
 
-    const rounds = db.prepare(`
+    const rows = db.prepare(`
       SELECT r.block_height, r.block_hash, r.coinbase_value, r.winner_diff, r.winner_username, r.participant_status,
+             m.is_public AS winner_is_public,
              COALESCE(w.total_work, 0) AS total_work
       FROM rounds r
+      LEFT JOIN monitored_users m ON m.address = r.winner_username
       LEFT JOIN (
         SELECT block_height, SUM(total_work) AS total_work
         FROM round_participants
@@ -17,7 +20,18 @@ export async function GET() {
       ) w ON w.block_height = r.block_height
       WHERE r.block_height != 0
       ORDER BY r.block_height DESC
-    `).all() as RoundRow[];
+    `).all() as (RoundRow & { winner_is_public: number | null })[];
+
+    // PRIVACY: only return truncated addresses, and redact winners who opted
+    // out of public listing (unmonitored winners stay visible, matching the
+    // participant queries).
+    const rounds: RoundRow[] = rows.map(({ winner_is_public, winner_username, ...row }) => ({
+      ...row,
+      winner_username:
+        winner_username && (winner_is_public === null || winner_is_public === 1)
+          ? formatAddress(winner_username)
+          : null,
+    }));
 
     // Prepend synthetic current-round entry if participant data exists
     const currentRound = db.prepare(

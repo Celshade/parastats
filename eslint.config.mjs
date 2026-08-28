@@ -14,11 +14,17 @@ const eslintConfig = [
   },
   ...nextPlugin,
   {
+    files: ['**/*.ts', '**/*.tsx'],
+    settings: {
+      react: {
+        version: '19.2',
+      },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": "warn",
       "react-hooks/set-state-in-effect": "off",
     }
-  }
+  },
 ];
 
 export default eslintConfig;
